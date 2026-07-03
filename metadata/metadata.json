@@ -38,5 +38,57 @@
         "path": "/Users/Ayush/mini-erasure-store/storage/node_6/b6bb104c-e78d-4d7c-9b38-543949bfd6c5_shard_5.bin"
       }
     ]
+  },
+  "4502a8b8-f4a5-4eae-a6cb-1737df2b9b44": {
+    "id": "4502a8b8-f4a5-4eae-a6cb-1737df2b9b44",
+    "fileName": "testing.txt",
+    "mimeType": "text/plain",
+    "size": 477,
+    "paddingSize": 3,
+    "createdAt": "2026-07-03T20:37:43.294Z",
+    "shards": [
+      {
+        "index": 0,
+        "nodeName": "node_1",
+        "path": "/Users/Ayush/mini-erasure-store/storage/node_1/4502a8b8-f4a5-4eae-a6cb-1737df2b9b44_shard_0.bin",
+        "hash": "56058f7947adbc1be981b7efd66d648ff59563942f81cf7753c6972dd3975e62",
+        "objectId": "4502a8b8-f4a5-4eae-a6cb-1737df2b9b44"
+      },
+      {
+        "index": 1,
+        "nodeName": "node_2",
+        "path": "/Users/Ayush/mini-erasure-store/storage/node_2/4502a8b8-f4a5-4eae-a6cb-1737df2b9b44_shard_1.bin",
+        "hash": "45ada54168a8f8cd0828914686cac4c9df5681f933022cb3264e0999e8e63449",
+        "objectId": "4502a8b8-f4a5-4eae-a6cb-1737df2b9b44"
+      },
+      {
+        "index": 2,
+        "nodeName": "node_3",
+        "path": "/Users/Ayush/mini-erasure-store/storage/node_3/4502a8b8-f4a5-4eae-a6cb-1737df2b9b44_shard_2.bin",
+        "hash": "e6aa0312940cfb119a6f657455bf6c47cb336636b5c01519c73cc69b0d452e46",
+        "objectId": "4502a8b8-f4a5-4eae-a6cb-1737df2b9b44"
+      },
+      {
+        "index": 3,
+        "nodeName": "node_4",
+        "path": "/Users/Ayush/mini-erasure-store/storage/node_4/4502a8b8-f4a5-4eae-a6cb-1737df2b9b44_shard_3.bin",
+        "hash": "4600fef84e55eac1d6c4640c818a99e77a3465095e941c711a83c58aad80e2f5",
+        "objectId": "4502a8b8-f4a5-4eae-a6cb-1737df2b9b44"
+      },
+      {
+        "index": 4,
+        "nodeName": "node_5",
+        "path": "/Users/Ayush/mini-erasure-store/storage/node_5/4502a8b8-f4a5-4eae-a6cb-1737df2b9b44_shard_4.bin",
+        "hash": "507eb8a1c38b2b158bab330f56ad8a34b78a8e395713676133174d4ffa7af4d1",
+        "objectId": "4502a8b8-f4a5-4eae-a6cb-1737df2b9b44"
+      },
+      {
+        "index": 5,
+        "nodeName": "node_6",
+        "path": "/Users/Ayush/mini-erasure-store/storage/node_6/4502a8b8-f4a5-4eae-a6cb-1737df2b9b44_shard_5.bin",
+        "hash": "7508c43234d21cc06f643dbd5e3a8135608b3f7f8894b8d3bc69f631e1b27909",
+        "objectId": "4502a8b8-f4a5-4eae-a6cb-1737df2b9b44"
+      }
+    ]
   }
 }

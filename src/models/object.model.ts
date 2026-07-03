@@ -2,6 +2,8 @@ export interface ShardLocation {
     index: number;
     nodeName: string;
     path: string;
+    hash: string;
+    objectId: string;
 }
 
 export interface ObjectMetaData {

@@ -28,36 +28,46 @@ Erasure coding is a data protection method that spreads data across multiple sha
 ## Architecture
 
 ```
-┌──────────┐     ┌─────────────────────────────────────────────────────┐
-│  Client  │     │                  Express Server                     │
-│  curl    │────▶│                                                     │
-└──────────┘     │  ┌──────────┐  ┌──────────────┐  ┌───────────────┐ │
-                 │  │  Routes  │─▶│  Controller  │─▶│    Service    │ │
-                 │  │ (object  │  │ (object      │  │ (object       │ │
-                 │  │  .route) │  │  .controller)│  │  .service)    │ │
-                 │  └──────────┘  └──────────────┘  └───────┬───────┘ │
-                 │                                          │         │
-                 │                                  ┌───────▼───────┐ │
-                 │                                  │ Reed-Solomon  │ │
-                 │                                  │  WASM Binary  │ │
-                 │                                  │  (encode/     │ │
-                 │                                  │  reconstruct) │ │
-                 │                                  └───────┬───────┘ │
-                 └──────────────────────────────────────────┼─────────┘
-                                                            │
-        ┌───────────────────────────────────────────────────┼─────────────────────┐
-        │                       Disk Storage                │                     │
-        │                                                   ▼                     │
-        │  ┌────────┐  ┌────────┐  ┌────────┐  ┌────────┐  ┌────────┐  ┌────────┐ │
-        │  │ node_1 │  │ node_2 │  │ node_3 │  │ node_4 │  │ node_5 │  │ node_6 │ │
-        │  │ shard_0│  │ shard_1│  │ shard_2│  │ shard_3│  │ shard_4│  │ shard_5│ │
-        │  │ (data) │  │ (data) │  │ (data) │  │ (data) │  │(parity)│  │(parity)│ │
-        │  └────────┘  └────────┘  └────────┘  └────────┘  └────────┘  └────────┘ │
-        │                                                                         │
-        │  ┌───────────────────────────────────────────────────────────────────┐   │
-        │  │  metadata/metadata.json  (maps object IDs → shard locations)     │   │
-        │  └───────────────────────────────────────────────────────────────────┘   │
-        └─────────────────────────────────────────────────────────────────────────┘
+┌──────────┐     ┌───────────────────────────────────────────────────────────────┐
+│  Client  │     │                    Main Server (:3000)                        │
+│  curl    │────▶│                                                               │
+└──────────┘     │  ┌──────────┐  ┌──────────────┐  ┌────────────────────────┐  │
+                 │  │  Routes  │─▶│  Controller  │─▶│    ObjectService       │  │
+                 │  │ (object  │  │ (object      │  │  upload / download     │  │
+                 │  │  .route) │  │  .controller)│  │  delete / list         │  │
+                 │  └──────────┘  └──────────────┘  └───────────┬────────────┘  │
+                 │                                               │               │
+                 │                          ┌────────────────────┼──────────┐    │
+                 │                          │  Background Tasks  │          │    │
+                 │                          │  ┌─────────────────▼────┐     │    │
+                 │                          │  │   RepairService     │     │    │
+                 │                          │  │  (checks every 30s) │     │    │
+                 │                          │  └────────────────────┘     │    │
+                 │                          └─────────────────────────────┘    │
+                 │                                                           │
+                 │  ┌─────────────────────────────────────────────────────┐   │
+                 │  │  Reed-Solomon WASM (encode / reconstruct)          │   │
+                 │  └─────────────────────────────────────────────────────┘   │
+                 │                                                           │
+                 │  ┌─────────────────────────────────────────────────────┐   │
+                 │  │  NodeRegistry + NodeClient (HTTP clients × 6)      │   │
+                 │  └──────────────────────┬──────────────────────────────┘   │
+                 └─────────────────────────┼──────────────────────────────────┘
+                                           │
+        ┌──────────────────────────────────┼────────────────────────────────────┐
+        │            Network              │                                     │
+        │    ┌──────┐  ┌──────┐  ┌──────┐ │  ┌──────┐  ┌──────┐  ┌──────┐     │
+        │    │:3001 │  │:3002 │  │:3003 │ │  │:3004 │  │:3005 │  │:3006 │     │
+        │    │node_1│  │node_2│  │node_3│ │  │node_4│  │node_5│  │node_6│     │
+        │    │(data)│  │(data)│  │(data)│ │  │(data)│  │parity│  │parity│     │
+        │    └──┬───┘  └──┬───┘  └──┬───┘ │  └──┬───┘  └──┬───┘  └──┬───┘     │
+        │       └─────────┴─────────┴──────┼────┴─────────┴─────────┘         │
+        │                                  │                                   │
+        │  ┌───────────────────────────────┼───────────────────────────────┐   │
+        │  │  metadata/metadata.json       │  (SHA-256 hashes per shard)   │   │
+        │  │  + background repair daemon   │                               │   │
+        │  └───────────────────────────────┘                                   │
+        └──────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -68,27 +78,39 @@ Erasure coding is a data protection method that spreads data across multiple sha
 
 1. **Receive file** — Multer parses the multipart upload into a `Buffer`
 2. **Pad** — If the file isn't evenly divisible by `DATA_SHARDS` (4), append zero bytes
-3. **Encode** — Copy the padded data into a contiguous buffer, then call `rs.encode()` to compute 2 parity shards
-4. **Distribute** — Write each of the 6 shards to `storage/node_X/<uuid>_shard_Y.bin`
-5. **Record metadata** — Save `{ id, fileName, mimeType, size, paddingSize, shardLocations }` to `metadata.json`
+3. **Encode** — Copy the padded data into a contiguous buffer, call `rs.encode()` to compute 2 parity shards
+4. **Distribute** — For each of the 6 shards, send an HTTP `PUT /shard/:id/:index` to the corresponding storage node (ports 3001–3006). Each node responds with the file path and SHA-256 hash of the shard.
+5. **Record metadata** — Save `{ id, fileName, mimeType, size, paddingSize, shardLocations }` to `metadata.json`, including each shard's hash for later integrity verification.
 
 > **Shard size math:** `shardSize = (fileSize + paddingSize) / 4`
 
 ### Download Flow
 
 1. **Lookup metadata** — Find the object by ID in `metadata.json`
-2. **Check shards** — Probe all 6 storage paths; record which are present and which are missing
-3. **Decision:**
-   - **All 6 present** → straight concatenation, no reconstruction needed
+2. **Fetch shards** — Send 6 concurrent HTTP `GET /shard/:id/:index` requests to the respective storage nodes. Each response includes an `X-Shard-Hash` header.
+3. **Verify integrity** — Compute SHA-256 of each received shard and compare against the hash stored in metadata. Mismatches are treated as corrupt (shard unavailable).
+4. **Decision:**
+   - **All 6 present and valid** → straight concatenation, no reconstruction needed
    - **4 or 5 present** → copy available shards into a buffer, call `rs.reconstruct()` using the missing-indices mask to recover lost shards
    - **3 or fewer present** → raise **unrecoverable** error (not enough redundancy)
-4. **Trim padding** — Slice the buffer back to the original file size
-5. **Return** — Stream the buffer with original `Content-Type` and `Content-Disposition`
+5. **Trim padding** — Slice the buffer back to the original file size
+6. **Return** — Stream the buffer with original `Content-Type` and `Content-Disposition`
 
 ### Delete Flow
 
-1. Delete all 6 shard files from their respective node directories
+1. Send 6 concurrent HTTP `DELETE /shard/:id/:index` requests to the respective storage nodes
 2. Remove metadata entry from `metadata.json`
+
+### Background Repair
+
+A repair daemon runs on a 30-second interval:
+1. Scans all objects in metadata
+2. For each object, probes all 6 storage nodes via `HEAD /shard/:id/:index`
+3. If shards are missing but reconstruction is still possible (`>= DATA_SHARDS` available):
+   - Reads available shards (with integrity verification)
+   - Runs Reed-Solomon reconstruction to recover missing shards
+   - Pushes reconstructed shards via `PUT /shard/:id/:index`
+   - Updates metadata with new SHA-256 hashes for repaired shards
 
 ---
 
@@ -109,11 +131,26 @@ Erasure coding is a data protection method that spreads data across multiple sha
 # Install dependencies
 npm install
 
-# Start the server
+# Terminal 1: Start all 6 storage nodes (ports 3001–3006)
+npm run start:nodes
+
+# Terminal 2: Start the main server (port 3000)
 npm run dev
+
+# Or use the shortcut that starts everything at once:
+npm run start:all
 ```
 
-Server starts on `http://localhost:3000`.
+Main server on `http://localhost:3000`, storage nodes on ports 3001–3006.
+
+### Running storage nodes individually
+
+```bash
+# Each node is a standalone Express server
+npm run storage-node -- --port=3001 --node=node_1
+npm run storage-node -- --port=3002 --node=node_2
+# ... etc
+```
 
 ---
 
@@ -157,6 +194,9 @@ curl -X DELETE http://localhost:3000/objects/abc-123-...
 ## Manual Testing Walkthrough
 
 ```bash
+# 0. Prerequisites — start everything (or use separate terminals):
+npm run start:all
+
 # 1. Create a test file
 echo "Hello, Erasure Coding!" > test.txt
 
@@ -168,21 +208,31 @@ curl -X POST http://localhost:3000/upload -F "file=@test.txt"
 curl -o downloaded.txt http://localhost:3000/objects/<OBJECT_ID>
 diff test.txt downloaded.txt  # should match
 
-# 4. Simulate node failure — delete 2 shards (within tolerance)
-rm storage/node_1/<OBJECT_ID>_shard_0.bin
-rm storage/node_2/<OBJECT_ID>_shard_1.bin
+# 4. Simulate node failure — kill 2 storage nodes (within tolerance)
+kill $(lsof -t -i :3001) $(lsof -t -i :3002)
 
-# 5. Download again — logs show Reed-Solomon reconstructing lost shards
+# 5. Download again — main server logs show:
+#    ❌ shard 0 MISSING — node offline
+#    ❌ shard 1 MISSING — node offline
+#    ⚙️ Running Reed-Solomon reconstruction...
 curl -o reconstructed.txt http://localhost:3000/objects/<OBJECT_ID>
 diff test.txt reconstructed.txt  # should still match
 
-# 6. Simulate unrecoverable failure — delete 3+ shards
-rm storage/node_3/<OBJECT_ID>_shard_*.bin
-rm storage/node_4/<OBJECT_ID>_shard_*.bin
+# 6. Simulate unrecoverable failure — kill 3 more nodes (5 total lost)
+kill $(lsof -t -i :3003) $(lsof -t -i :3004) $(lsof -t -i :3005)
 curl http://localhost:3000/objects/<OBJECT_ID>  # → 500 error (unrecoverable)
 
-# 7. Upload fresh, then delete
-curl -X DELETE http://localhost:3000/objects/<OTHER_ID>  # → 204
+# 7. Restart nodes, watch repair daemon fix them
+npm run start:nodes
+# After ~30s, the repair daemon detects missing shards,
+# reconstructs them, and re-writes to the revived nodes.
+
+# 8. Download again — all 6 shards restored
+curl -o repaired.txt http://localhost:3000/objects/<OBJECT_ID>
+diff test.txt repaired.txt  # should match
+
+# 9. Delete the object
+curl -X DELETE http://localhost:3000/objects/<OBJECT_ID>  # → 204
 ```
 
 ---
@@ -192,31 +242,39 @@ curl -X DELETE http://localhost:3000/objects/<OTHER_ID>  # → 204
 ```
 mini-erasure-store/
 ├── src/
-│   ├── server.ts                 # Entry point — starts Express on PORT
-│   ├── app.ts                    # Express app setup + global error handler
+│   ├── server.ts                    # Entry point — starts Express + repair daemon
+│   ├── app.ts                       # Express app setup + global error handler
 │   ├── config/
-│   │   └── constants.ts          # Shard counts, paths, node names
+│   │   └── constants.ts             # Shard counts, ports, repair interval
 │   ├── models/
-│   │   └── object.model.ts       # TypeScript types (ObjectMetaData, ShardLocation)
+│   │   └── object.model.ts          # TypeScript types (ObjectMetaData, ShardLocation)
 │   ├── routes/
-│   │   └── object.route.ts       # Route definitions + multer config
+│   │   └── object.route.ts          # Route definitions + multer config
 │   ├── controller/
-│   │   └── object.controller.ts  # HTTP layer — parse request, format response
+│   │   └── object.controller.ts     # HTTP layer — parse request, format response
 │   ├── services/
-│   │   └── object.service.ts     # Core logic — upload, download/reconstruct, delete
-│   ├── metadata/
-│   │   └── metadata.service.ts   # CRUD for metadata.json (atomic writes)
-│   └── storage/
-│       └── storage.service.ts    # Read/write/delete shard files on disk
+│   │   ├── object.service.ts         # Core logic — upload, download/reconstruct, delete
+│   │   └── hash.service.ts          # SHA-256 computation + verification
+│   ├── infrastructure/
+│   │   ├── node-registry.ts         # Maps node names to HTTP URLs
+│   │   └── node-client.ts           # HTTP client for storage node CRUD
+│   ├── storage/
+│   │   └── storage.service.ts       # Shard I/O via NodeClient + integrity checks
+│   ├── storage-node/
+│   │   └── index.ts                 # Standalone storage node server (PUT/GET/DELETE/HEAD)
+│   ├── repair/
+│   │   └── repair.service.ts        # Background daemon — detects + fixes missing shards
+│   └── metadata/
+│       └── metadata.service.ts      # CRUD for metadata.json (atomic writes)
 ├── storage/
-│   ├── node_1/                   # Data shard 0
-│   ├── node_2/                   # Data shard 1
-│   ├── node_3/                   # Data shard 2
-│   ├── node_4/                   # Data shard 3
-│   ├── node_5/                   # Parity shard 4
-│   └── node_6/                   # Parity shard 5
+│   ├── node_1/                      # Data shard 0
+│   ├── node_2/                      # Data shard 1
+│   ├── node_3/                      # Data shard 2
+│   ├── node_4/                      # Data shard 3
+│   ├── node_5/                      # Parity shard 4
+│   └── node_6/                      # Parity shard 5
 ├── metadata/
-│   └── metadata.json             # Object → shard-location mappings
+│   └── metadata.json                # Object → shard-location mappings with SHA-256 hashes
 ├── package.json
 ├── tsconfig.json
 └── README.md
@@ -230,12 +288,16 @@ All constants in `src/config/constants.ts`:
 
 | Variable | Default | Description |
 |---|---|---|
-| `PORT` | `3000` | HTTP server port |
+| Variable | Default | Description |
+|---|---|---|---|
+| `PORT` | `3000` | Main server HTTP port |
 | `DATA_SHARDS` | `4` | Number of data shards the file is split into |
 | `PARITY_SHARDS` | `2` | Number of parity (recovery) shards |
 | `TOTAL_SHARDS` | `6` | `DATA_SHARDS + PARITY_SHARDS` |
-| `STORAGE_DIR` | `./storage` | Root directory for simulated storage nodes |
+| `STORAGE_DIR` | `./storage` | Root directory for storage node data |
 | `METADATA_FILE` | `./metadata/metadata.json` | Metadata persistence file |
+| `STORAGE_NODE_BASE_PORT` | `3001` | Port of the first storage node (node_1). Each subsequent node gets +1. |
+| `REPAIR_INTERVAL_MS` | `30000` | Background repair daemon scan interval (milliseconds) |
 
 To change the redundancy level, adjust `DATA_SHARDS` and `PARITY_SHARDS`. For example, RS(6,3) would tolerate 3 node failures with 50% overhead (6 data + 3 parity = 9 total).
 
@@ -243,27 +305,21 @@ To change the redundancy level, adjust `DATA_SHARDS` and `PARITY_SHARDS`. For ex
 
 ## Next Steps / Learning Path
 
-### Level 1 — Hardening & Realism
-
-- **Integrity checks** — Store SHA-256 hashes per shard in metadata. Verify on download to catch silent corruption.
-- **Background repair daemon** — Periodically scan shards. When fewer than `TOTAL_SHARDS` but at least `DATA_SHARDS` are found, reconstruct missing shards and re-write them.
-- **Real node simulation** — Run each "node" as a separate HTTP process. Losing a node means connection refused, not just a missing file. Forces proper retry/timeout logic.
-
 ### Level 2 — Distribution & Discovery
 
-- **Network storage nodes** — Each node exposes `GET/PUT/DELETE /shard/:id` over HTTP. The upload/download service fans out requests across multiple hosts.
-- **Node registry + heartbeats** — Track liveness. Skip dead nodes during reads; trigger repair for them.
+- **Node registry with dynamic discovery** — Currently the registry is a static config. Build a real registry with service discovery (etcd, Consul, or a simple Raft-backed store) so nodes can join/leave without restarting the main server.
+- **Client-side load balancing** — When reading shards, prefer faster or geographically closer nodes.
 
 ### Level 3 — Production Patterns
 
-- **Real database** — Replace `metadata.json` with SQLite or PostgreSQL for atomic concurrent access.
-- **Streaming encode/decode** — Process files in chunks instead of loading the whole buffer, enabling multi-GB file support.
-- **Consistent hashing** — Map shards to nodes via a hash ring so adding/removing nodes minimizes reshuffling.
+- **Real database for metadata** — Replace `metadata.json` with SQLite or PostgreSQL for atomic concurrent access, backups, and querying.
+- **Streaming encode/decode** — Process files in chunks instead of loading the whole buffer into memory. Enables multi-GB file support.
+- **Consistent hashing** — Map shards to nodes via a hash ring so adding/removing nodes minimizes data reshuffling (like Amazon Dynamo).
 
 ### Level 4 — Advanced Concepts
 
-- **Multi-DC replication** — Namespace by tenant, RS groups per region, cross-region replication.
-- **Tiered storage** — Hot objects replicated 3x, cold objects erasure-coded (like Facebook's f4).
+- **Multi-DC replication** — Namespace objects by tenant, create RS groups per region, implement cross-region replication.
+- **Tiered storage** — Hot objects: 3x replication. Cold objects: erasure coded. Policy-driven tiering based on access frequency (like Facebook's f4).
 - **Property-based tests** — Randomized tests that drop any 2 of 6 shards and verify the output matches the input byte-for-byte.
 
 ---

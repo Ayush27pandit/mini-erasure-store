@@ -4,8 +4,11 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-   "dev": "tsx watch src/server.ts",
-  "start": "tsx src/server.ts"
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "storage-node": "tsx src/storage-node/index.ts",
+    "start:nodes": "for i in $(seq 1 6); do PORT=$((3000 + i)) tsx src/storage-node/index.ts --port=$((3000 + i)) --node=node_$i & sleep 0.5; done; wait",
+    "start:all": "npm run start:nodes & sleep 2 && npm start"
   },
   "keywords": [],
   "author": "",
