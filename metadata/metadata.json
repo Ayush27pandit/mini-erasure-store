@@ -1,0 +1,42 @@
+{
+  "b6bb104c-e78d-4d7c-9b38-543949bfd6c5": {
+    "id": "b6bb104c-e78d-4d7c-9b38-543949bfd6c5",
+    "fileName": "package.json",
+    "mimeType": "application/octet-stream",
+    "size": 588,
+    "paddingSize": 0,
+    "createdAt": "2026-07-03T19:05:51.037Z",
+    "shards": [
+      {
+        "index": 0,
+        "nodeName": "node_1",
+        "path": "/Users/Ayush/mini-erasure-store/storage/node_1/b6bb104c-e78d-4d7c-9b38-543949bfd6c5_shard_0.bin"
+      },
+      {
+        "index": 1,
+        "nodeName": "node_2",
+        "path": "/Users/Ayush/mini-erasure-store/storage/node_2/b6bb104c-e78d-4d7c-9b38-543949bfd6c5_shard_1.bin"
+      },
+      {
+        "index": 2,
+        "nodeName": "node_3",
+        "path": "/Users/Ayush/mini-erasure-store/storage/node_3/b6bb104c-e78d-4d7c-9b38-543949bfd6c5_shard_2.bin"
+      },
+      {
+        "index": 3,
+        "nodeName": "node_4",
+        "path": "/Users/Ayush/mini-erasure-store/storage/node_4/b6bb104c-e78d-4d7c-9b38-543949bfd6c5_shard_3.bin"
+      },
+      {
+        "index": 4,
+        "nodeName": "node_5",
+        "path": "/Users/Ayush/mini-erasure-store/storage/node_5/b6bb104c-e78d-4d7c-9b38-543949bfd6c5_shard_4.bin"
+      },
+      {
+        "index": 5,
+        "nodeName": "node_6",
+        "path": "/Users/Ayush/mini-erasure-store/storage/node_6/b6bb104c-e78d-4d7c-9b38-543949bfd6c5_shard_5.bin"
+      }
+    ]
+  }
+}
