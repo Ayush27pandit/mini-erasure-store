@@ -1,9 +1,0 @@
-",
-  "start": "tsx src/server.ts"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
-  "dependencies": {
-    "@digital
